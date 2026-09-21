@@ -1,0 +1,62 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environments
+.venv/
+venv/
+ENV/
+env/
+
+# Environment Variables & Secrets (CRITICAL: Never commit API keys!)
+.env
+.env.local
+.env.*.local
+*.env
+
+# Audio cache & recordings
+data/cache/
+data/screenshots/*.png
+data/screenshots/*.jpg
+!data/screenshots/.gitkeep
+*.mp3
+*.wav
+
+# Large Offline Speech Models (Vosk models, Whisper models)
+data/vosk-model*
+vosk-model*
+
+# IDE & Editor Settings
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS generated files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.DS_Store
