@@ -319,6 +319,37 @@ class ManiDesktopApp:
                 self.update_language_ui()
         self.root.after(0, _action)
 
+    def start_assistant_message(self, action: str | None = None):
+        """Starts a streaming assistant message block in the chat feed."""
+        def _action():
+            now = datetime.datetime.now().strftime("%H:%M:%S")
+            self.feed_box.config(state=tk.NORMAL)
+            self.feed_box.insert(tk.END, f"\nM.A.N.I. ", "mani_sender")
+            if action and action != "conversation" and action != "standby":
+                self.feed_box.insert(tk.END, f"[{action.upper()}] ", "badge")
+            self.feed_box.insert(tk.END, f"[{now}]\n", "timestamp")
+            self.feed_box.see(tk.END)
+            self.feed_box.config(state=tk.DISABLED)
+        self.root.after(0, _action)
+
+    def append_assistant_chunk(self, chunk: str):
+        """Appends a streaming sentence/chunk to the current assistant message."""
+        def _action():
+            self.feed_box.config(state=tk.NORMAL)
+            self.feed_box.insert(tk.END, f"{chunk} ", "mani_body")
+            self.feed_box.see(tk.END)
+            self.feed_box.config(state=tk.DISABLED)
+        self.root.after(0, _action)
+
+    def finalize_assistant_message(self):
+        """Finalizes the streaming message with a clean trailing newline."""
+        def _action():
+            self.feed_box.config(state=tk.NORMAL)
+            self.feed_box.insert(tk.END, "\n")
+            self.feed_box.see(tk.END)
+            self.feed_box.config(state=tk.DISABLED)
+        self.root.after(0, _action)
+
     def toggle_language(self):
         """Toggle between Malayalam (ml-IN) and English (en-IN)."""
         current = config.AUDIO_LANGUAGE or "ml-IN"

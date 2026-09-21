@@ -10,10 +10,7 @@ from jarvis.config import config
 class JarvisBrain:
     GEMINI_MODELS = [
         "gemini-3.1-flash-lite",
-        "gemini-3.6-flash",
-        "gemini-3.7-flash",
-        "gemini-3.5-flash",
-        "gemini-flash-latest",
+        "gemini-3.5-flash-lite",
     ]
 
 
@@ -98,11 +95,23 @@ class JarvisBrain:
         """Returns True if Gemini client is initialized."""
         return self.gemini_client is not None
 
-    def query_llm(self, prompt: str) -> str | None:
-        """Attempt to query Gemini with fast timeout protection and offline fallback."""
+    def _get_system_prompt(self) -> str:
+        """Returns the current system prompt tuned for crisp, spoken voice assistant replies."""
         import datetime
         now_ctx = datetime.datetime.now().strftime("%A, %B %d, %Y at %I:%M %p")
-        sys_prompt = f"{config.SYSTEM_PROMPT}\nCurrent local computer time: {now_ctx}."
+        return (
+            f"{config.SYSTEM_PROMPT}\n"
+            f"Current local computer time: {now_ctx}.\n"
+            "CRITICAL SPOKEN VOICE RULES:\n"
+            "- You are speaking aloud directly to the user.\n"
+            "- Keep answers concise, natural, and conversational in 1 to 2 crisp sentences (under 35 words), "
+            "unless the user specifically asks for detail, steps, or explanation.\n"
+            "- Never output markdown symbols, asterisks (*), hashtags (#), or bullet points."
+        )
+
+    def query_llm(self, prompt: str) -> str | None:
+        """Attempt to query Gemini with fast timeout protection and offline fallback."""
+        sys_prompt = self._get_system_prompt()
 
         # 1. Try Gemini (Primary Cloud LLM)
         if self.gemini_client:
@@ -114,14 +123,15 @@ class JarvisBrain:
                     config=types.GenerateContentConfig(
                         system_instruction=sys_prompt,
                         temperature=0.7,
-                        max_output_tokens=300
+                        max_output_tokens=85
                     )
                 )
                 if response and response.text:
-                    return response.text.strip()
+                    clean_text = re.sub(r'[*_#`]', '', response.text).strip()
+                    return clean_text
             except Exception as e:
-                # Try at most one alternate fallback model to prevent timeout cascading
-                alt_model = "gemini-3.6-flash" if self.active_model != "gemini-3.6-flash" else "gemini-3.1-flash-lite"
+                # Try fallback fast model to prevent timeout cascading
+                alt_model = "gemini-3.5-flash-lite" if self.active_model != "gemini-3.5-flash-lite" else "gemini-3.1-flash-lite"
                 try:
                     from google.genai import types
                     response = self.gemini_client.models.generate_content(
@@ -130,16 +140,16 @@ class JarvisBrain:
                         config=types.GenerateContentConfig(
                             system_instruction=sys_prompt,
                             temperature=0.7,
-                            max_output_tokens=300
+                            max_output_tokens=85
                         )
                     )
                     if response and response.text:
                         self.active_model = alt_model
-                        return response.text.strip()
+                        clean_text = re.sub(r'[*_#`]', '', response.text).strip()
+                        return clean_text
                 except Exception:
                     pass
                 print(f"[Gemini API Notice] {e}. Using offline intelligent response.")
-
 
         # 2. Try Ollama ONLY IF explicitly enabled in configuration
         if config.OLLAMA_ENABLED:
@@ -161,6 +171,62 @@ class JarvisBrain:
 
         # Zero-delay drop to offline respond
         return None
+
+    def stream_query_llm(self, prompt: str):
+        """
+        Ultra-low-latency streaming LLM generator.
+        Yields complete sentences as soon as sentence-ending punctuation is encountered,
+        allowing the speaker to start synthesizing and playing audio while subsequent sentences are generated.
+        """
+        sys_prompt = self._get_system_prompt()
+
+        if self.gemini_client:
+            try:
+                from google.genai import types
+                stream = self.gemini_client.models.generate_content_stream(
+                    model=self.active_model,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        system_instruction=sys_prompt,
+                        temperature=0.7,
+                        max_output_tokens=85
+                    )
+                )
+                accumulated = ""
+                for chunk in stream:
+                    if not chunk.text:
+                        continue
+                    accumulated += chunk.text
+                    # Check for sentence boundaries: [.!?] followed by whitespace or end of token
+                    while True:
+                        m = re.search(r'([.!?]+(?:\s+|\Z)|\n+)', accumulated)
+                        if not m:
+                            break
+                        end_idx = m.end()
+                        sentence = accumulated[:end_idx].strip()
+                        accumulated = accumulated[end_idx:]
+                        if sentence:
+                            clean_sentence = re.sub(r'[*_#`]', '', sentence).strip()
+                            if clean_sentence:
+                                yield clean_sentence
+
+                remaining = accumulated.strip()
+                if remaining:
+                    clean_remaining = re.sub(r'[*_#`]', '', remaining).strip()
+                    if clean_remaining:
+                        yield clean_remaining
+                return
+            except Exception as e:
+                print(f"[Gemini Stream Notice] {e}. Falling back to standard query.")
+
+        # Fallback if streaming failed or Gemini unavailable
+        fallback_ans = self.query_llm(prompt) or self.offline_respond(prompt)
+        if fallback_ans:
+            sentences = re.split(r'(?<=[.!?])\s+', fallback_ans)
+            for s in sentences:
+                s_clean = s.strip()
+                if s_clean:
+                    yield s_clean
 
 
 
@@ -210,7 +276,7 @@ class JarvisBrain:
         q = query.lower().strip()
 
         # Math detection
-        if any(w in q for w in ["calculate", "multiply", "plus", "minus", "divided by"]) or re.match(r'^[\d\s+\-*/()^.]+$', q):
+        if any(w in q for w in ["calculate", "multiply", "plus", "minus", "divided by", "times", "multiplied by", "into", " + ", " - ", " * ", " / "]) or re.match(r'^[\d\s+\-*/()^.]+$', q):
             math_ans = self.calculate_math(q)
             if math_ans:
                 return math_ans
@@ -304,7 +370,7 @@ class JarvisBrain:
         q = query.lower().strip()
 
         # Math detection
-        if any(w in q for w in ["calculate", "multiply", "plus", "minus", "divided by"]) or re.match(r'^[\d\s+\-*/()^.]+$', q):
+        if any(w in q for w in ["calculate", "multiply", "plus", "minus", "divided by", "times", "multiplied by", "into", " + ", " - ", " * ", " / "]) or re.match(r'^[\d\s+\-*/()^.]+$', q):
             math_ans = self.calculate_math(q)
             if math_ans:
                 return math_ans
@@ -373,6 +439,15 @@ class JarvisBrain:
             return llm_response
 
         return self.offline_respond(query)
+
+    def stream_ask(self, query: str):
+        """Streaming version of ask(): yields instant offline matches immediately, or streams LLM sentences."""
+        quick = self.quick_offline_match(query)
+        if quick:
+            yield quick
+            return
+
+        yield from self.stream_query_llm(query)
 
 brain = JarvisBrain()
 

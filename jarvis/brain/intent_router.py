@@ -127,16 +127,10 @@ class IntentRouter:
 
         return False, None
 
-    def process(self, query: str) -> dict:
+    def process(self, query: str, stream: bool = False) -> dict:
         """
         Processes user text or voice command.
-        Returns a dict:
-        {
-            "query": query,
-            "response": voice_reply_text,
-            "action": action_name_or_None,
-            "data": extra_data_dict_or_None
-        }
+        If stream=True, conversational questions return a generator without blocking.
         """
         raw_query = query.strip()
         q = self.clean_query(raw_query)
@@ -557,13 +551,40 @@ class IntentRouter:
         # 16. CONVERSATIONAL / LLM GENERAL INTELLIGENCE (Gemini / Offline)
         # =========================================================================
         quick_reply = brain.quick_offline_match(q) or brain.quick_offline_match(raw_query)
-        reply = quick_reply if quick_reply else brain.ask(q or raw_query)
+        if quick_reply:
+            return {
+                "stream": False,
+                "query": raw_query,
+                "response": quick_reply,
+                "action": "conversation",
+                "data": None
+            }
+
+        if stream:
+            return {
+                "stream": True,
+                "query": raw_query,
+                "generator": brain.stream_ask(q or raw_query),
+                "action": "conversation",
+                "data": None
+            }
+
+        reply = brain.ask(q or raw_query)
         return {
+            "stream": False,
             "query": raw_query,
             "response": reply,
             "action": "conversation",
             "data": None
         }
 
+    def process_stream(self, query: str) -> dict:
+        """
+        Processes command and returns streaming generator for conversational questions,
+        or instant response dict for local actions and quick replies with zero redundant calls.
+        """
+        return self.process(query, stream=True)
+
 
 intent_router = IntentRouter()
+

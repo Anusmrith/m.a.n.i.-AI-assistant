@@ -24,7 +24,7 @@ from jarvis.ui.desktop_window import ManiDesktopApp
 desktop_app = None
 
 def handle_user_command(cmd_text: str):
-    """Processes user command from voice or direct desktop UI input."""
+    """Processes user command from voice or direct desktop UI input with ultra-low latency streaming."""
     if not cmd_text or not cmd_text.strip():
         return
 
@@ -33,18 +33,46 @@ def handle_user_command(cmd_text: str):
         desktop_app.append_user_message(cmd_text)
         desktop_app.set_status("PROCESSING")
 
-    # Execute through Intent Router
-    result = intent_router.process(cmd_text)
-    reply = result["response"]
-    action = result.get("action")
+    # Route command: returns streaming generator for LLM queries, or instant dict for local actions
+    routed = intent_router.process_stream(cmd_text)
 
-    if desktop_app:
-        desktop_app.append_assistant_message(reply, action)
-        desktop_app.set_status("SPEAKING")
+    if routed.get("stream"):
+        # Real-time concurrent streaming path:
+        # Synthesizes and speaks Sentence 1 immediately while Sentence 2 is being generated!
+        if desktop_app:
+            desktop_app.start_assistant_message("conversation")
 
-    # Speak response using neural voice
-    speaker.speak(reply, block=True)
+        def on_first_sentence(sent):
+            if desktop_app:
+                desktop_app.set_status("SPEAKING")
 
+        def on_sentence_spoken(sent):
+            print(f"[Mani]: {sent}")
+            if desktop_app:
+                desktop_app.append_assistant_chunk(sent)
+
+        speaker.speak_stream(
+            routed["generator"],
+            block=True,
+            on_first_sentence=on_first_sentence,
+            on_sentence_spoken=on_sentence_spoken
+        )
+
+        if desktop_app:
+            desktop_app.finalize_assistant_message()
+    else:
+        # Instant local action or quick offline match (<5ms response time)
+        reply = routed["response"]
+        action = routed.get("action")
+        print(f"[Mani]: {reply}")
+
+        if desktop_app:
+            desktop_app.append_assistant_message(reply, action)
+            desktop_app.set_status("SPEAKING")
+
+        speaker.speak(reply, block=True)
+
+    action = routed.get("action")
     if action in ("stop", "standby"):
         listener.end_conversation()
         if desktop_app:

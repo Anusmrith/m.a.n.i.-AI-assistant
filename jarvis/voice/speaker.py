@@ -42,9 +42,9 @@ class JarvisSpeaker:
         return config.VOICE
 
     def prewarm_cache(self):
-        """Pre-synthesizes common phrases in the background for instant <10ms playback."""
+        """Pre-synthesizes common phrases in the background for instant <5ms playback."""
         phrases = [
-            # English frequent phrases
+            # English frequent phrases & conversational greetings
             "Yes, sir?",
             "At your service.",
             "Online, sir.",
@@ -57,14 +57,48 @@ class JarvisSpeaker:
             "You're very welcome, sir. Standing by.",
             "Good day, sir. Standing by whenever you need me.",
             f"Good day, sir. Systems initialized. {config.ASSISTANT_NAME} is online and at your service.",
-            # Malayalam frequent phrases (മലയാളം)
+            "Hello, sir! How may I assist you today?",
+            "Always right here, sir. Standing by for your instructions.",
+            "Operating at peak computational efficiency, sir. All subsystems are optimal and ready for your command.",
+            "Yes, sir! I hear you loud and clear. All acoustic sensors are fully operational.",
+            
+            # Common English action responses
+            "Opening YouTube, sir.",
+            "Opening Google Chrome, sir.",
+            "Opening Calculator, sir.",
+            "Opening Notepad, sir.",
+            "Opening Visual Studio Code, sir.",
+            "Opening Spotify, sir.",
+            "Opening browser, sir.",
+            "Muting system audio, sir.",
+            "Unmuting system audio, sir.",
+            "Volume increased, sir.",
+            "Volume decreased, sir.",
+            "Screenshot captured and saved to data folder, sir.",
+            "Locking workstation now, sir.",
+            "Minimizing all windows, sir.",
+
+            # Malayalam frequent phrases & actions (മലയാളം)
             "ശരി, സാർ.",
             "തീർച്ചയായും സാർ.",
             "പറയൂ സാർ, ഞാൻ കേൾക്കുന്നുണ്ട്.",
             "സിസ്റ്റം പ്രവർത്തനസജ്ജമാണ്.",
             "നിങ്ങളുടെ സേവനത്തിനായി ഞാൻ ഇവിടെയുണ്ട്, സാർ.",
             "എന്താണ് ഞാൻ ചെയ്യേണ്ടത് സാർ?",
-            "എല്ലാം തയ്യാറാണ് സാർ."
+            "എല്ലാം തയ്യാറാണ് സാർ.",
+            "നമസ്കാരം സാർ! ഞാൻ മാണി. ഞാൻ എങ്ങനെ സഹായിക്കണം?",
+            "ഞാൻ ഇവിടെത്തന്നെയുണ്ട് സാർ. നിങ്ങളുടെ നിർദ്ദേശങ്ങൾക്കായി കാത്തിരിക്കുന്നു.",
+            "തീർച്ചയായും സാർ! ഞാൻ വ്യക്തമായി കേൾക്കുന്നുണ്ട്. എല്ലാ ഓഡിയോ സെൻസറുകളും പൂർണ്ണമായി പ്രവർത്തനക്ഷമമാണ്.",
+            "യൂട്യൂബ് തുറക്കുന്നു, സാർ.",
+            "ക്രോം തുറക്കുന്നു, സാർ.",
+            "കാൽക്കുലേറ്റർ തുറക്കുന്നു, സാർ.",
+            "നോട്ട്പാഡ് തുറക്കുന്നു, സാർ.",
+            "കോഡ് തുറക്കുന്നു, സാർ.",
+            "ശബ്ദം കുറച്ചു, സാർ.",
+            "ശബ്ദം കൂട്ടി, സാർ.",
+            "മ്യൂട്ട് ചെയ്തു, സാർ.",
+            "അൺമ്യൂട്ട് ചെയ്തു, സാർ.",
+            "സ്ക്രീൻഷോട്ട് എടുത്തു, സാർ."
         ]
         def _worker():
             for p in phrases:
@@ -145,13 +179,95 @@ class JarvisSpeaker:
         )
         await communicate.save(str(output_path))
 
-    def _generate_audio_data(self, text: str) -> tuple[np.ndarray, int]:
+    def _synthesize_to_memory(self, text: str) -> tuple[np.ndarray, int]:
+        """Synthesizes speech directly into memory or reads from disk cache in <5ms."""
         cache_path = self._get_cache_path(text)
-        if not cache_path.exists() or cache_path.stat().st_size == 0:
-            asyncio.run(self._synthesize_to_file(text, cache_path))
-        data, samplerate = sf.read(str(cache_path))
-        return data, samplerate
+        if cache_path.exists() and cache_path.stat().st_size > 0:
+            data, samplerate = sf.read(str(cache_path))
+            return data, samplerate
 
+        target_voice = self.get_target_voice(text)
+
+        # 1. Try ElevenLabs if configured (for non-Malayalam text)
+        if config.ELEVENLABS_API_KEY and not is_malayalam_text(text):
+            if self._synthesize_elevenlabs(text, cache_path):
+                data, samplerate = sf.read(str(cache_path))
+                return data, samplerate
+
+        # 2. Edge-TTS in-memory streaming
+        async def _fetch_mp3():
+            communicate = edge_tts.Communicate(
+                text=text,
+                voice=target_voice,
+                rate=self.rate,
+                pitch=self.pitch
+            )
+            mp3_buf = bytearray()
+            async for chunk in communicate.stream():
+                if chunk["type"] == "audio":
+                    mp3_buf.extend(chunk["data"])
+            return bytes(mp3_buf)
+
+        try:
+            mp3_bytes = asyncio.run(_fetch_mp3())
+            if mp3_bytes:
+                # Save to cache asynchronously for instant future replays
+                def _bg_save(raw_bytes, path):
+                    try:
+                        with open(path, "wb") as f:
+                            f.write(raw_bytes)
+                    except Exception:
+                        pass
+                threading.Thread(target=_bg_save, args=(mp3_bytes, cache_path), daemon=True).start()
+
+                buf = io.BytesIO(mp3_bytes)
+                data, samplerate = sf.read(buf)
+                return data, samplerate
+        except Exception as e:
+            print(f"[Memory Synth Notice] {e}")
+
+        # Fallback to standard file synthesis
+        return self._generate_audio_data(text)
+
+    def _play_audio_array(self, data: np.ndarray, samplerate: int):
+        """Plays audio samples through sounddevice with live amplitude visualizer updates."""
+        chunk_size = int(samplerate * 0.05)  # 50ms chunks
+        total_samples = len(data)
+        channels = 1 if data.ndim == 1 else data.shape[1]
+
+        try:
+            with sd.OutputStream(samplerate=samplerate, channels=channels, dtype='float32') as stream:
+                idx = 0
+                while idx < total_samples and not self._stop_requested:
+                    end = min(idx + chunk_size, total_samples)
+                    chunk = data[idx:end]
+                    stream.write(chunk.astype(np.float32))
+
+                    # Live RMS amplitude for Arc Reactor pulsation
+                    rms = float(np.sqrt(np.mean(chunk**2))) if len(chunk) > 0 else 0.0
+                    for cb in self.on_audio_chunk_callbacks:
+                        try:
+                            cb(rms)
+                        except Exception:
+                            pass
+
+                    idx = end
+        except Exception as dev_err:
+            try:
+                sd.play(data, samplerate)
+                sd.wait()
+            except Exception:
+                step = 0.05
+                dur = total_samples / samplerate
+                elapsed = 0
+                while elapsed < dur and not self._stop_requested:
+                    time.sleep(step)
+                    elapsed += step
+                    for cb in self.on_audio_chunk_callbacks:
+                        try:
+                            cb(0.3)
+                        except Exception:
+                            pass
 
     def stop(self):
         """Immediately abort speech playback."""
@@ -176,57 +292,16 @@ class JarvisSpeaker:
             with self._lock:
                 self._stop_requested = False
                 self.is_speaking = True
-                
-                # Notify start
+
                 for cb in self.on_start_callbacks:
                     try:
                         cb(text)
                     except Exception:
                         pass
-                
+
                 try:
-                    data, samplerate = self._generate_audio_data(text)
-                    
-                    # Play via sounddevice in chunks so visualizer gets live audio amplitude
-                    chunk_size = int(samplerate * 0.05)  # 50ms chunks
-                    total_samples = len(data)
-                    channels = 1 if data.ndim == 1 else data.shape[1]
-                    
-                    try:
-                        with sd.OutputStream(samplerate=samplerate, channels=channels, dtype='float32') as stream:
-                            idx = 0
-                            while idx < total_samples and not self._stop_requested:
-                                end = min(idx + chunk_size, total_samples)
-                                chunk = data[idx:end]
-                                stream.write(chunk.astype(np.float32))
-                                
-                                # Calculate RMS amplitude for Arc Reactor pulsation
-                                rms = float(np.sqrt(np.mean(chunk**2))) if len(chunk) > 0 else 0.0
-                                for cb in self.on_audio_chunk_callbacks:
-                                    try:
-                                        cb(rms)
-                                    except Exception:
-                                        pass
-                                
-                                idx = end
-                    except Exception as dev_err:
-                        # Fallback to direct sd.play if stream creation fails
-                        try:
-                            sd.play(data, samplerate)
-                            sd.wait()
-                        except Exception:
-                            # Final fallback: simulate RMS pulses for HUD
-                            step = 0.05
-                            dur = total_samples / samplerate
-                            elapsed = 0
-                            while elapsed < dur and not self._stop_requested:
-                                time.sleep(step)
-                                elapsed += step
-                                for cb in self.on_audio_chunk_callbacks:
-                                    try:
-                                        cb(0.3)
-                                    except Exception:
-                                        pass
+                    data, samplerate = self._synthesize_to_memory(text)
+                    self._play_audio_array(data, samplerate)
                 except Exception as e:
                     print(f"[Speaker Error] {e}")
                 finally:
@@ -239,6 +314,84 @@ class JarvisSpeaker:
                             pass
 
         thread = threading.Thread(target=_worker, daemon=True)
+        thread.start()
+        if block:
+            thread.join()
+
+    def speak_stream(self, sentence_generator, block: bool = True, on_first_sentence=None, on_sentence_spoken=None):
+        """
+        Stream-synthesizes and plays sentences concurrently.
+        Sentence 1 begins playback immediately once synthesized,
+        while Sentence 2 is synthesized in the background concurrently.
+        """
+        def _stream_worker():
+            with self._lock:
+                self._stop_requested = False
+                self.is_speaking = True
+
+                for cb in self.on_start_callbacks:
+                    try:
+                        cb("...")
+                    except Exception:
+                        pass
+
+                import queue
+                synth_queue = queue.Queue(maxsize=3)
+                done_sentinel = object()
+                first_sent_done = False
+
+                def _synth_worker():
+                    try:
+                        for sentence in sentence_generator:
+                            if self._stop_requested:
+                                break
+                            clean_s = sentence.strip()
+                            if not clean_s:
+                                continue
+                            try:
+                                audio_data, sr = self._synthesize_to_memory(clean_s)
+                                synth_queue.put((clean_s, audio_data, sr))
+                            except Exception as syn_err:
+                                print(f"[Stream Synth Error] {syn_err}")
+                    finally:
+                        synth_queue.put(done_sentinel)
+
+                s_thread = threading.Thread(target=_synth_worker, daemon=True)
+                s_thread.start()
+
+                try:
+                    while not self._stop_requested:
+                        item = synth_queue.get()
+                        if item is done_sentinel:
+                            break
+
+                        sentence_text, data, samplerate = item
+                        if not first_sent_done:
+                            first_sent_done = True
+                            if on_first_sentence:
+                                try:
+                                    on_first_sentence(sentence_text)
+                                except Exception:
+                                    pass
+
+                        self._play_audio_array(data, samplerate)
+                        if on_sentence_spoken:
+                            try:
+                                on_sentence_spoken(sentence_text)
+                            except Exception:
+                                pass
+                except Exception as e:
+                    print(f"[Stream Play Error] {e}")
+                finally:
+                    self.is_speaking = False
+                    self.last_spoke_time = time.time()
+                    for cb in self.on_stop_callbacks:
+                        try:
+                            cb()
+                        except Exception:
+                            pass
+
+        thread = threading.Thread(target=_stream_worker, daemon=True)
         thread.start()
         if block:
             thread.join()

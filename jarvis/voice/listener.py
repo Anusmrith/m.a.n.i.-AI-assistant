@@ -35,9 +35,9 @@ class JarvisListener:
         self.conversation_expiry = 0.0
         self.CONVERSATION_TIMEOUT = 15.0
         
-        # VAD & Endpointing timing — comfortable conversational pace!
-        self.SILENCE_TIMEOUT_STANDBY = 0.85  # 850ms for wake word + command
-        self.SILENCE_TIMEOUT_CONVO = 0.90    # 900ms in conversation
+        # VAD & Endpointing timing — tuned for ultra-responsive interaction!
+        self.SILENCE_TIMEOUT_STANDBY = 0.52  # 520ms for fast wake word + command capture
+        self.SILENCE_TIMEOUT_CONVO = 0.58    # 580ms in continuous conversation
         self.max_speech_duration = 15.0
         self.blocksize = int(self.sample_rate * 0.032)
         if self.blocksize < 256:
@@ -284,23 +284,31 @@ class JarvisListener:
     def transcribe(self, pcm_mono_int16: np.ndarray) -> str:
         """
         High-accuracy STT pipeline with bilingual Malayalam & English support:
-        1. Primary: Google Web STT using configured AUDIO_LANGUAGE (default ml-IN).
-        2. Dual-language fallback: If primary language returns no match, try secondary
-           (e.g., if user speaks English while in Malayalam mode, or vice versa).
-        3. Fall back to Vosk local model if completely offline.
+        1. Fast local path: If configured for English and Vosk is available, transcribe locally in ~200-300ms.
+        2. Primary cloud STT: Google Web STT with configured AUDIO_LANGUAGE (default ml-IN).
+        3. Dual-language fallback: Local Vosk (instant) or Google fallback.
         """
         if len(pcm_mono_int16) < int(self.sample_rate * 0.25):
             return ""
 
         t0 = time.time()
         norm_pcm = self._normalize_audio(pcm_mono_int16)
-        pcm_bytes = norm_pcm.astype(np.int16).tobytes()
-        audio_data = sr.AudioData(pcm_bytes, self.sample_rate, 2)
-
         primary_lang = config.AUDIO_LANGUAGE or "ml-IN"
         fallback_lang = "en-IN" if primary_lang.startswith("ml") else "ml-IN"
 
-        # 1. Primary: Google Web STT with active language
+        # 1. Fast offline local path for English (bypasses internet latency completely: 200-300ms)
+        if primary_lang.startswith("en") and self._vosk_available:
+            vosk_text = self._vosk_transcribe(norm_pcm)
+            vosk_ms = (time.time() - t0) * 1000
+            if vosk_text and len(vosk_text.strip()) > 1:
+                clean_text = self._normalize_command_text(vosk_text)
+                print(f"[STT Vosk Instant ({primary_lang})] \"{clean_text}\" ({vosk_ms:.0f}ms)")
+                return clean_text
+
+        # 2. Cloud STT: Google Web STT with primary language
+        pcm_bytes = norm_pcm.astype(np.int16).tobytes()
+        audio_data = sr.AudioData(pcm_bytes, self.sample_rate, 2)
+
         try:
             text = self.recognizer.recognize_google(audio_data, language=primary_lang)
             google_ms = (time.time() - t0) * 1000
@@ -315,20 +323,8 @@ class JarvisListener:
         except Exception as e:
             print(f"[STT Error] {e}")
 
-        # 2. Dual-language fallback: Try secondary language if primary had no match
-        try:
-            text = self.recognizer.recognize_google(audio_data, language=fallback_lang)
-            fallback_ms = (time.time() - t0) * 1000
-            if text and text.strip():
-                clean_text = self._normalize_command_text(text.strip())
-                print(f"[STT Google Fallback ({fallback_lang})] \"{clean_text}\" ({fallback_ms:.0f}ms)")
-                return clean_text
-        except sr.UnknownValueError:
-            pass
-        except Exception:
-            pass
-
-        # 3. Offline fallback: Vosk local model
+        # 3. Fast offline fallback:
+        # If primary was Malayalam, try local Vosk for any English commands before hitting network
         if self._vosk_available:
             vosk_text = self._vosk_transcribe(norm_pcm)
             vosk_ms = (time.time() - t0) * 1000
@@ -336,7 +332,19 @@ class JarvisListener:
                 clean_text = self._normalize_command_text(vosk_text)
                 print(f"[STT Vosk Fallback] \"{clean_text}\" ({vosk_ms:.0f}ms)")
                 return clean_text
-            
+
+        # 4. Final network fallback to secondary language if not already tried
+        if not primary_lang.startswith("en"):
+            try:
+                text = self.recognizer.recognize_google(audio_data, language=fallback_lang)
+                fallback_ms = (time.time() - t0) * 1000
+                if text and text.strip():
+                    clean_text = self._normalize_command_text(text.strip())
+                    print(f"[STT Google Fallback ({fallback_lang})] \"{clean_text}\" ({fallback_ms:.0f}ms)")
+                    return clean_text
+            except Exception:
+                pass
+
         return ""
 
     def _audio_callback(self, indata, frames, time_info, status):
