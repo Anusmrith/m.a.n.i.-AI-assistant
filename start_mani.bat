@@ -6,17 +6,6 @@ echo ===================================================
 echo       Launching M.A.N.I. Personal AI Assistant
 echo ===================================================
 
-:: Check for Python installation
-where python >nul 2>&1
-if %errorlevel% neq 0 (
-    echo [ERROR] Python is not found in your system PATH.
-    echo Please install Python 3.10+ from https://www.python.org/
-    echo Make sure to check "Add Python to PATH" during installation.
-    echo.
-    pause
-    exit /b 1
-)
-
 :: Ensure .env exists from template if first time
 if not exist ".env" (
     if exist ".env.example" (
@@ -25,26 +14,75 @@ if not exist ".env" (
     )
 )
 
-:: Check if virtual environment exists; if not, create it and install requirements
-if not exist ".venv\Scripts\python.exe" (
-    echo [*] First-time setup detected. Configuring Python environment...
-    echo [*] Creating virtual environment (.venv)...
-    python -m venv .venv
-    if %errorlevel% neq 0 (
-        echo [ERROR] Failed to create virtual environment.
-        pause
-        exit /b 1
-    )
-    echo [*] Installing required packages from requirements.txt...
-    .venv\Scripts\python.exe -m pip install --upgrade pip --quiet
-    .venv\Scripts\pip.exe install -r requirements.txt
-    if %errorlevel% neq 0 (
-        echo [WARNING] Some dependencies had warnings during installation.
-    )
-    echo [*] Setup complete!
-    echo.
+:: Check if virtual environment already exists
+if exist ".venv\Scripts\python.exe" goto :RUN_APP
+
+:: Virtual environment not found; discover a working Python installation
+echo [*] First-time setup detected. Configuring Python environment...
+
+set "PYTHON_EXE="
+
+:: 1. Try py launcher
+py -3 --version >nul 2>&1
+if %errorlevel% equ 0 (
+    set "PYTHON_EXE=py -3"
+    goto :CREATE_VENV
 )
 
+:: 2. Try python command
+python --version >nul 2>&1
+if %errorlevel% equ 0 (
+    set "PYTHON_EXE=python"
+    goto :CREATE_VENV
+)
+
+:: 3. Scan common Windows Python installation directories
+for /d %%D in ("%LOCALAPPDATA%\Programs\Python\Python*") do (
+    if exist "%%D\python.exe" (
+        "%%D\python.exe" --version >nul 2>&1
+        if %errorlevel% equ 0 (
+            set "PYTHON_EXE="%%D\python.exe""
+            goto :CREATE_VENV
+        )
+    )
+)
+
+for /d %%D in ("C:\Program Files\Python*") do (
+    if exist "%%D\python.exe" (
+        "%%D\python.exe" --version >nul 2>&1
+        if %errorlevel% equ 0 (
+            set "PYTHON_EXE="%%D\python.exe""
+            goto :CREATE_VENV
+        )
+    )
+)
+
+echo [ERROR] No working Python 3.10+ installation found.
+echo Please install Python from https://www.python.org/
+echo Make sure to check "Add Python to PATH" during installation.
+echo.
+pause
+exit /b 1
+
+:CREATE_VENV
+echo [*] Creating virtual environment (.venv) using %PYTHON_EXE%...
+%PYTHON_EXE% -m venv .venv
+if %errorlevel% neq 0 (
+    echo [ERROR] Failed to create virtual environment.
+    pause
+    exit /b 1
+)
+
+echo [*] Installing required packages from requirements.txt...
+.venv\Scripts\python.exe -m pip install --upgrade pip --quiet
+.venv\Scripts\pip.exe install -r requirements.txt
+if %errorlevel% neq 0 (
+    echo [WARNING] Some dependencies had warnings during installation.
+)
+echo [*] Setup complete!
+echo.
+
+:RUN_APP
 chcp 65001 >nul
 set PYTHONIOENCODING=utf-8
 

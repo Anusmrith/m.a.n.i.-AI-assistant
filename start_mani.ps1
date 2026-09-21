@@ -6,13 +6,15 @@ Write-Host "===================================================" -ForegroundColo
 Write-Host "      Launching M.A.N.I. Personal AI Assistant    " -ForegroundColor Cyan
 Write-Host "===================================================" -ForegroundColor Cyan
 
-# Check for Python
-$pythonCmd = Get-Command python -ErrorAction SilentlyContinue
-if (-not $pythonCmd) {
-    Write-Host "[ERROR] Python was not found in your PATH." -ForegroundColor Red
-    Write-Host "Please install Python 3.10+ from https://www.python.org/" -ForegroundColor Yellow
-    pause
-    exit 1
+# Check for virtual environment or global Python
+if (-not (Test-Path ".venv\Scripts\python.exe")) {
+    $pythonCmd = Get-Command python -ErrorAction SilentlyContinue
+    if (-not $pythonCmd) {
+        Write-Host "[ERROR] Python was not found in your PATH." -ForegroundColor Red
+        Write-Host "Please install Python 3.10+ from https://www.python.org/" -ForegroundColor Yellow
+        pause
+        exit 1
+    }
 }
 
 # Ensure .env exists

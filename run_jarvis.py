@@ -14,7 +14,7 @@ except Exception:
 from jarvis.config import config
 from jarvis.voice.listener import listener
 from jarvis.voice.speaker import speaker
-from jarvis.voice.sfx import play_confirm_chime
+from jarvis.voice.sfx import play_confirm_chime, play_wake_chime, play_standby_chime
 from jarvis.brain.intent_router import intent_router
 from jarvis.actions.telemetry import telemetry
 from jarvis.actions.system_control import system_controller
