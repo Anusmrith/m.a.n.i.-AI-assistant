@@ -1,12 +1,10 @@
 # M.A.N.I. Personal AI Assistant (Mark VII)
 
-[![HUD Live Demo](https://img.shields.io/badge/Arc--Reactor%20HUD-Live%20Demo-00f0ff?style=for-the-badge&logo=github&logoColor=white)](https://anusmrith.github.io/m.a.n.i.-AI-assistant/)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%2F%2011-0078d6?style=for-the-badge&logo=windows)](https://github.com/Anusmrith/m.a.n.i.-AI-assistant)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-yellow?style=for-the-badge&logo=python)](https://www.python.org/)
+[![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)](https://github.com/Anusmrith/m.a.n.i.-AI-assistant)
 
-A voice-activated, intelligent personal AI assistant inspired by Iron Man's J.A.R.V.I.S., designed specifically for Windows.
-
-🌐 **Experience the Live Stark Industries Arc-Reactor HUD online:** [https://anusmrith.github.io/m.a.n.i.-AI-assistant/](https://anusmrith.github.io/m.a.n.i.-AI-assistant/)
+A voice-activated, intelligent personal AI assistant inspired by Iron Man's J.A.R.V.I.S., built specifically for Windows as a native desktop application.
 
 ---
 
@@ -18,24 +16,23 @@ A voice-activated, intelligent personal AI assistant inspired by Iron Man's J.A.
    - **You do NOT need to say "Mani" again** for follow-up questions or commands! Speak directly to him.
    - Every question refreshes the listening timer.
    - To finish, say *"that's all"*, *"thank you"*, *"bye"*, or simply pause for 10 seconds, and Mani gracefully returns to Standby.
-   - Responds with an authentic high-tech rising chime and speaks back with a cinematic British neural voice (`en-GB-RyanNeural`).
+   - Responds with an authentic high-tech rising chime and speaks back with a cinematic British neural voice (`en-GB-RyanNeural`) or Malayalam neural voice (`ml-IN-SobhanaNeural`).
 
 2. **Windows Computer Control & Automation**:
    - **Launch Apps**: "Open Chrome", "Launch Spotify", "Open VS Code", "Start Calculator", "Open Notepad", etc.
    - **Volume & Audio**: "Mute", "Unmute", "Volume up", "Volume down", "Set volume to 50".
    - **Media Control**: "Play music", "Pause", "Next track", "Previous track".
-   - **Desktop Control**: "Take a screenshot" (stored in `data/screenshots/` and previewed on the HUD), "Minimize windows" / "Show desktop", "Lock workstation".
+   - **Desktop Control**: "Take a screenshot" (stored in `data/screenshots/` and previewed on the window), "Minimize windows" / "Show desktop", "Lock workstation".
    - **System Telemetry**: "System status" or "Diagnostics" reports CPU %, RAM %, Disk space, and Battery reserves.
    - **Web & YouTube**: "Search Google for ...", "Play Queen Bohemian Rhapsody on YouTube", "Open Reddit", "Open GitHub".
    - **Notes & Reminders**: "Take a note: ...", "Read my notes", "Clear all notes".
    - **Weather & Time**: "What time is it?", "What date is it?", "Weather in Tokyo".
 
-3. **Stark Industries Arc-Reactor HUD**:
-   - Holographic dark-mode interface with rotating concentric energy rings and glassmorphism.
-   - Dynamic real-time Audio Visualizer ring pulsing to Mani's voice.
-   - Live system telemetry gauges (CPU, RAM, Battery, Disk, Uptime) updating in real-time over WebSocket.
-   - Neural transcript feed with screenshot previews and action badges.
-   - One-click quick-action dock and command input.
+3. **Native Windows Desktop Window**:
+   - Sleek cyberpunk desktop companion window showing live CPU, RAM, Battery, and Disk telemetry.
+   - Real-time conversation transcript and screenshot previews.
+   - Quick Action buttons for instant 1-click execution.
+   - Audio pulse meter reflecting spoken speech and microphone intensity.
 
 4. **AI Intelligence Engine**:
    - Built-in Autonomous Offline Intelligence: handles math calculations, Wikipedia queries, jokes, system automation, and classic persona dialogues without requiring an API key.
@@ -44,25 +41,28 @@ A voice-activated, intelligent personal AI assistant inspired by Iron Man's J.A.
 
 ---
 
-## 🚀 Quick Start
+## 🚀 Quick Start (Windows)
 
-### 1. Launch Mani
-Simply double-click:
-```bash
+### 1. Run from GitHub
+Clone the repository and launch Mani:
+```cmd
+git clone https://github.com/Anusmrith/m.a.n.i.-AI-assistant.git
+cd m.a.n.i.-AI-assistant
 start_mani.bat
 ```
-(or `start_jarvis.bat`)
 
-Or run from PowerShell / Command Prompt:
-```bash
-.venv\Scripts\python.exe run_jarvis.py
+*(Or in PowerShell)*:
+```powershell
+git clone https://github.com/Anusmrith/m.a.n.i.-AI-assistant.git; cd m.a.n.i.-AI-assistant; .\start_mani.bat
 ```
 
-This will:
-1. Start the FastAPI backend and WebSocket pipeline on `http://127.0.0.1:8000`.
-2. Automatically launch the Arc-Reactor HUD in your default web browser.
-3. Announce systems online in the neural voice: *"Good day, sir. Systems initialized. Mani is online and at your service."*
-4. Begin monitoring your microphone for the wake word **"Mani"**.
+### 2. What `start_mani.bat` Does Automatically:
+`start_mani.bat` is an all-in-one launcher designed for seamless Windows execution:
+- ✅ Checks for Python 3.10+ installation
+- ✅ Automatically initializes a Python virtual environment (`.venv`) on first launch
+- ✅ Installs all dependencies from `requirements.txt`
+- ✅ Sets up your local `.env` configuration file from `.env.example`
+- ✅ Starts the native Windows desktop companion window and activates voice listening!
 
 ---
 
@@ -84,10 +84,11 @@ Say **"Mani"**, wait for the chime or reply, and speak your command, or say it i
 
 ## ⚙️ Configuration (`.env`)
 
-To customize settings, edit `.env`:
+Settings are stored in `.env` (automatically created from `.env.example` on first run):
 ```ini
 JARVIS_NAME=Mani
 JARVIS_VOICE=en-GB-RyanNeural
+AUDIO_LANGUAGE=en-IN
 ENERGY_THRESHOLD=400
 GEMINI_API_KEY=your_gemini_api_key_here
 ```
